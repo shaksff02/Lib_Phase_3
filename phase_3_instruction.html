@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Phase 3 Instructions – Students &amp; Issue/Return Management</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            color: #1a1f36;
+            background: #f6f8fc;
+        }
+        header {
+            background: #0d2c54;
+            color: #fff;
+            padding: 34px 20px;
+        }
+        header h1 { margin: 0 0 10px 0; }
+        main {
+            max-width: 1080px;
+            margin: 26px auto 70px;
+            padding: 0 22px;
+        }
+        section {
+            background: #fff;
+            border-radius: 12px;
+            margin-bottom: 22px;
+            padding: 26px 30px;
+            box-shadow: 0 7px 24px rgba(13, 44, 84, 0.08);
+        }
+        h2 { color: #0d2c54; margin-top: 0; }
+        h3 { color: #1c3664; margin-bottom: 8px; }
+        pre {
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 13px 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 14px;
+        }
+        ul { padding-left: 22px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+        .grid div {
+            background: #e9efff;
+            padding: 16px;
+            border-radius: 10px;
+        }
+        .callout {
+            border-left: 4px solid #f77f00;
+            background: #fff4e6;
+            padding: 14px 18px;
+            border-radius: 8px;
+            margin: 16px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0;
+        }
+        th, td {
+            border: 1px solid #d7def1;
+            padding: 10px 12px;
+            text-align: left;
+        }
+        th { background: #ecf1ff; color: #1c3664; }
+        footer {
+            text-align: center;
+            padding: 34px 20px 44px;
+            color: #5c6480;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>Phase 3 – Student Records &amp; Issue/Return Workflow</h1>
+    <p>
+        Phase 2 delivered CRUD for books. Phase 3 expands the system to manage students and handle
+        the circulation workflow: issuing books, tracking borrowed quantities, and processing returns.
+        This guide documents every backend/frontend enhancement so beginners can build the phase confidently.
+    </p>
+</header>
+<main>
+    <section id="backend-foundations" style="background: #fff; border-radius: 12px; margin-bottom: 22px; padding: 26px 30px; box-shadow: 0 7px 24px rgba(13, 44, 84, 0.08);">
+        <h2 style="color: #0d2c54; margin-top: 0; font-size: 2em;">🎓 Phase 3 Backend Foundations – Relationships & Circular Logic</h2>
+        <p style="font-size: 1.05em; max-width: 900px; line-height: 1.8;">
+            <strong>What's New in Phase 3:</strong> Phase 2 handled a single model (Book) in isolation. Phase 3 introduces 
+            <strong>relational complexity</strong> — connecting Students to Books through IssuedBook. This creates circular dependencies: 
+            issuing a book decreases inventory, returning increases it. You'll learn how ForeignKeys work, how to validate across related models, 
+            and how to optimize queries. These patterns are fundamental to enterprise backend development.
+        </p>
+    </section>
+
+    <section id="concept-boxes" style="background: #fff; border-radius: 12px; margin-bottom: 22px; padding: 26px 30px; box-shadow: 0 7px 24px rgba(13, 44, 84, 0.08);">
+        <h2 style="color: #0d2c54; margin-top: 0;">Core Backend Concepts</h2>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">1. Foreign Keys – Connecting Models</h4>
+            <p><strong>The Problem:</strong> We have Books and Students. How do we record "Student X borrowed Book Y"?</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+# Solution: Use ForeignKey to link IssuedBook to both Book and Student
+class IssuedBook(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE)
+    book = models.ForeignKey(Book, on_delete=models.CASCADE)
+    quantity = models.IntegerField()
+            </pre>
+            <p><strong>What this means:</strong></p>
+            <ul>
+                <li>Each IssuedBook record references ONE student (many-to-one)</li>
+                <li>Each IssuedBook record references ONE book (many-to-one)</li>
+                <li>But one student can have MANY issued books, one book can be issued to MANY students</li>
+                <li>Database automatically adds student_id and book_id columns</li>
+            </ul>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">2. related_name – Reverse Relationships</h4>
+            <p><strong>Challenge:</strong> How do we query "what books has this student borrowed?"</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+# Define with related_name
+class IssuedBook(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='issued_books')
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name='issued_to')
+
+# Now query both directions:
+issued_book.student  # Forward: access the student
+student.issued_books.all()  # Backward (uses related_name!)
+            </pre>
+            <p><strong>Why it matters:</strong> Without related_name, reverse queries are verbose. With it, code is clean and intuitive.</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">3. on_delete=CASCADE – Handling Deletions</h4>
+            <p><strong>Question:</strong> If we delete a Student, what happens to their IssuedBook records?</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+student = models.ForeignKey(Student, on_delete=models.CASCADE)
+            </pre>
+            <p><strong>Options:</strong> CASCADE (delete related), PROTECT (prevent), SET_NULL (nullify), DO_NOTHING (dangerous)</p>
+            <p><strong>We use CASCADE:</strong> When a student leaves, delete their entire borrowing history.</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">4. Circular Logic – The Core of Phase 3</h4>
+            <p><strong>Issue Flow:</strong> Create IssuedBook record → Decrease Book.quantity</p>
+            <p><strong>Return Flow:</strong> Update IssuedBook.quantity → Increase Book.quantity</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+def issue_book(request):
+    form = IssuedBookForm(request.POST)
+    if form.is_valid():
+        issued_book = form.save()  # Step 1: Create record
+        book = issued_book.book
+        book.quantity -= issued_book.quantity  # Step 2: Update inventory
+        book.save()
+            </pre>
+            <p><strong>Why important:</strong> Inventory accuracy depends on both operations succeeding. If one fails, data becomes corrupt.</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">5. Validation Across Related Models</h4>
+            <p><strong>Rule:</strong> Don't allow borrowing more copies than available</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+class IssuedBookForm(forms.ModelForm):
+    def clean(self):
+        cleaned_data = super().clean()
+        book = cleaned_data.get('book')
+        quantity = cleaned_data.get('quantity')
+        
+        if book and quantity and quantity > book.quantity:
+            raise forms.ValidationError(
+                f"Cannot issue {quantity}. Only {book.quantity} available."
+            )
+        return cleaned_data
+            </pre>
+            <p><strong>Validation layers:</strong> Browser (weak) → Form (strong) → Model (strongest)</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">6. select_related() – Query Optimization</h4>
+            <p><strong>Problem:</strong> Displaying issued books requires student and book names. Bad code fetches them one-by-one.</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+# BAD: N+1 queries (1 + N students + N books)
+issued_books = IssuedBook.objects.all()
+
+# GOOD: Fetch all with one query using joins
+issued_books = IssuedBook.objects.select_related('student', 'book').all()
+            </pre>
+            <p><strong>Impact:</strong> With 1000 records: bad = ~2000 queries, good = 1 query!</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">7. Choice Fields – Constrained Values</h4>
+            <p><strong>For Student.department:</strong> Must be one of predefined options</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+class Student(models.Model):
+    DEPARTMENT_CHOICES = [
+        ('science', 'Science'),
+        ('commerce', 'Commerce'),
+        ('humanities', 'Humanities'),
+    ]
+    department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES)
+            </pre>
+            <p><strong>Benefits:</strong> Database enforces validity, form renders dropdown, get_display() shows human-readable text</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">8. Partial Returns – Stateful Updates</h4>
+            <p><strong>Scenario:</strong> Student borrowed 5 copies, returns 2, keeps 3 for now</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+# Partial return:
+issued_book.quantity = 5 - 2 = 3  # Still holding 3
+issued_book.is_returned = False   # Not fully returned
+issued_book.save()
+
+# Later, full return:
+issued_book.quantity = 3 - 3 = 0
+issued_book.is_returned = True    # NOW complete
+issued_book.save()
+            </pre>
+            <p><strong>State progression:</strong> Issued → Partially Returned → Fully Returned</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">9. Querying Across Relationships</h4>
+            <p><strong>Find all issued books for Science students:</strong></p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+# Use double underscore __ to traverse relationships
+science_issues = IssuedBook.objects.filter(student__department='science')
+
+# Search across relationships
+issued_books = IssuedBook.objects.filter(
+    Q(student__name__icontains='John') |
+    Q(book__title__icontains='Python')
+)
+            </pre>
+            <p><strong>How it works:</strong> Django converts __ to SQL JOIN internally</p>
+        </div>
+
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <h4 style="color: #1d2d50; margin-top: 0;">10. Unique Constraints – Database Integrity</h4>
+            <p><strong>For Student:</strong> id_number must be unique per student</p>
+            <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+class Student(models.Model):
+    id_number = models.CharField(max_length=20, unique=True)
+            </pre>
+            <p><strong>Enforcement:</strong> Database rejects duplicates, form catches early, prevents data inconsistency</p>
+        </div>
+    </section>
+
+    <section id="goals">
+        <h2>Learning Outcomes</h2>
+        <div class="grid">
+            <div>
+                <h3>Data Modeling</h3>
+                <ul>
+                    <li>Define related models with `ForeignKey` and `related_name`.</li>
+                    <li>Use choice fields to constrain department values.</li>
+                    <li>Configure query ordering for better UX.</li>
+                </ul>
+            </div>
+            <div>
+                <h3>Forms &amp; Validation</h3>
+                <ul>
+                    <li>Create `StudentForm`, `IssuedBookForm`, `ReturnBookForm`.</li>
+                    <li>Implement custom validation inside `clean()`.</li>
+                    <li>Handle partial returns with domain logic.</li>
+                </ul>
+            </div>
+            <div>
+                <h3>Views &amp; Templates</h3>
+                <ul>
+                    <li>Build CRUD screens for students.</li>
+                    <li>Create dashboards for issued books with filters.</li>
+                    <li>Teach how to reuse templates and include activity tables.</li>
+                </ul>
+            </div>
+            <div>
+                <h3>Business Processes</h3>
+                <ul>
+                    <li>Decrease/increase book stock when issuing/returning.</li>
+                    <li>Prevent over-issuing through validation.</li>
+                    <li>Record return dates and status flags.</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section id="architecture" style="background: #fff; border-radius: 12px; margin-bottom: 22px; padding: 26px 30px; box-shadow: 0 7px 24px rgba(13, 44, 84, 0.08);">
+        <h2 style="color: #0d2c54; margin-top: 0;">Phase 3 Architecture Overview</h2>
+
+        <h3 style="color: #1c3664; margin-bottom: 8px;">Data Model Relationships</h3>
+        <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+Book (1) ──→ (Many) IssuedBook ←─ (1) Student
+            ↑
+            |
+       Quantity decreases/increases
+            |
+        during issue/return
+        </pre>
+
+        <h3 style="color: #1c3664; margin-bottom: 8px;">Issue Book Flow</h3>
+        <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+Librarian clicks "Issue Book"
+↓
+GET /issue-book/
+↓
+View renders form with student and book dropdowns
+↓
+User selects student, book, quantity and submits
+↓
+POST /issue-book/
+↓
+Form validates: quantity ≤ book.quantity available?
+↓ (if valid)
+Create IssuedBook record
+↓
+CIRCULAR LOGIC: book.quantity -= issued_book.quantity
+↓
+Book saved
+↓
+Redirect to issued-books list with success message
+↓
+List shows updated book with lower quantity
+        </pre>
+
+        <h3 style="color: #1c3664; margin-bottom: 8px;">Return Book Flow (Partial + Full)</h3>
+        <pre style="background: #0f172a; color: #e2e8f0; padding: 16px 18px; border-radius: 6px; overflow-x: auto; font-size: 14px; line-height: 1.5;">
+Librarian clicks "Return" on active issue
+↓
+GET /issue/{id}/return/
+↓
+Form shows: issued_book.quantity (how many still held)
+↓
+User enters quantity_returned (e.g., 2 of 5)
+↓
+POST /issue/{id}/return/
+↓
+Form validates: quantity_returned ≤ issued_book.quantity?
+↓ (if valid)
+CIRCULAR LOGIC: issued_book.quantity -= quantity_returned
+↓
+if issued_book.quantity == 0:
+    issued_book.is_returned = True
+    issued_book.return_date = today
+↓
+IssuedBook saved
+↓
+CIRCULAR LOGIC: book.quantity += quantity_returned
+↓
+Book saved
+↓
+Redirect to issued-books list with success message
+        </pre>
+
+        <h3 style="color: #1c3664; margin-bottom: 8px;">High-Level Changes Compared to Phase 2</h3>
+        <table style="width: 100%; border-collapse: collapse; margin: 18px 0;">
+            <thead>
+            <tr style="background: #ecf1ff;">
+                <th style="border: 1px solid #d7def1; padding: 10px 12px; text-align: left; color: #1c3664;">Component</th>
+                <th style="border: 1px solid #d7def1; padding: 10px 12px; text-align: left; color: #1c3664;">Phase 2</th>
+                <th style="border: 1px solid #d7def1; padding: 10px 12px; text-align: left; color: #1c3664;">Phase 3 (New)</th>
+                <th style="border: 1px solid #d7def1; padding: 10px 12px; text-align: left; color: #1c3664;">Backend Concept</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Models</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Book only</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">+ Student, IssuedBook</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">ForeignKey, related_name, choices</td>
+            </tr>
+            <tr style="background: #f9fafb;">
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Forms</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">BookForm</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">+ StudentForm, IssuedBookForm, ReturnBookForm</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Cross-model validation, partial returns</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Views</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Book CRUD</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">+ Student CRUD, Issue, Return (circular logic)</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Multi-model updates, partial state changes</td>
+            </tr>
+            <tr style="background: #f9fafb;">
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Templates</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Book templates</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">+ Student templates, issue/return forms</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Related object display, status badges</td>
+            </tr>
+            <tr>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Queries</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Single model filters</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Joins, select_related, filter by relations</td>
+                <td style="border: 1px solid #d7def1; padding: 10px 12px;">Relationship traversal, optimization</td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section id="models">
+        <h2>Model Additions (`myapp/models.py`)</h2>
+        <h3>Student Model</h3>
+        <pre>
+class Student(models.Model):
+    DEPARTMENT_CHOICES = [
+        ('science', 'Science'),
+        ('commerce', 'Commerce'),
+        ('humanities', 'Humanities'),
+    ]
+
+    name = models.CharField(max_length=200)
+    id_number = models.CharField(max_length=20, unique=True)
+    department = models.CharField(max_length=20, choices=DEPARTMENT_CHOICES)
+    phone_number = models.CharField(max_length=20, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.id_number})"
+
+    class Meta:
+        ordering = ['id_number']</pre>
+        <p>Highlights: `choices` enforce allowed departments; `id_number` is unique; ordering ensures stable tables.</p>
+
+        <h3>IssuedBook Model</h3>
+        <pre>
+class IssuedBook(models.Model):
+    student = models.ForeignKey(Student, on_delete=models.CASCADE, related_name='issued_books')
+    book = models.ForeignKey(Book, on_delete=models.CASCADE, related_name='issued_to')
+    quantity = models.IntegerField(default=1)
+    issue_date = models.DateField(auto_now_add=True)
+    return_date = models.DateField(null=True, blank=True)
+    is_returned = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.book.title} - {self.student.name}"
+
+    class Meta:
+        ordering = ['-issue_date']</pre>
+        <ul>
+            <li>`related_name` lets us access `student.issued_books` easily in dashboards.</li>
+            <li>`is_returned` + `return_date` capture circulation status.</li>
+        </ul>
+
+        <div class="callout">
+            <strong>Migration tip:</strong> run <code>python manage.py makemigrations myapp</code> followed by
+            <code>python manage.py migrate</code> after adding the new models.
+        </div>
+    </section>
+
+    <section id="forms">
+        <h2>Forms (`myapp/forms.py`)</h2>
+        <h3>StudentForm</h3>
+        <pre>
+class StudentForm(forms.ModelForm):
+    class Meta:
+        model = Student
+        fields = ['name', 'id_number', 'department', 'phone_number']
+        widgets = { ... }  # Bootstrap inputs for consistency
+        labels = {
+            'name': 'Student Name',
+            'id_number': 'ID Number',
+            'department': 'Department',
+            'phone_number': 'Phone Number',
+        }</pre>
+        <p>Explain how reusing the form for create + edit keeps code DRY.</p>
+
+        <h3>IssuedBookForm</h3>
+        <pre>
+class IssuedBookForm(forms.ModelForm):
+    class Meta:
+        model = IssuedBook
+        fields = ['student', 'book', 'quantity']
+        widgets = {...}
+        labels = {...}
+
+    def clean(self):
+        cleaned_data = super().clean()
+        book = cleaned_data.get('book')
+        quantity = cleaned_data.get('quantity')
+
+        if book and quantity and quantity > book.quantity:
+            raise forms.ValidationError(
+                f"Not enough books available. Available: {book.quantity}"
+            )
+        return cleaned_data</pre>
+        <p>Students learn to enforce domain rules at the form layer before database writes.</p>
+
+        <h3>ReturnBookForm</h3>
+        <pre>
+class ReturnBookForm(forms.ModelForm):
+    class Meta:
+        model = IssuedBook
+        fields = ['quantity']
+        widgets = {...}
+
+    def clean(self):
+        cleaned_data = super().clean()
+        quantity = cleaned_data.get('quantity')
+        # Additional validation happens in the view since we need issued_book context
+        return cleaned_data</pre>
+    </section>
+
+    <section id="views-students">
+        <h2>Student Views (`myapp/views.py`)</h2>
+        <p>These follow the same CRUD patterns learned in Phase 2 but operate on the Student model.</p>
+        <h3>List View</h3>
+        <pre>
+def student_list(request):
+    students = Student.objects.all()
+    search_query = request.GET.get('search', '')
+
+    if search_query:
+        students = students.filter(
+            Q(name__icontains=search_query) |
+            Q(id_number__icontains=search_query) |
+            Q(department__icontains=search_query)
+        )
+
+    context = {
+        'students': students,
+        'total_students': Student.objects.count(),
+        'search_query': search_query,
+    }
+    return render(request, 'myapp/student_list.html', context)</pre>
+
+        <h3>Create/Edit/Delete</h3>
+        <p>Similar pattern as books; emphasize `get_object_or_404` and reusing `StudentForm`.</p>
+        <pre>
+def create_student(request):
+    if request.method == 'POST':
+        form = StudentForm(request.POST)
+        if form.is_valid():
+            student = form.save()
+            messages.success(request, f"Student '{student.name}' created successfully!")
+            return redirect('myapp:student_list')
+    else:
+        form = StudentForm()
+    ...
+
+def edit_student(request, pk):
+    student = get_object_or_404(Student, pk=pk)
+    ...
+
+def delete_student(request, pk):
+    student = get_object_or_404(Student, pk=pk)
+    ...</pre>
+        <p>Templates: `student_form.html`, `student_list.html`, `student_detail.html`, `student_confirm_delete.html`.</p>
+    </section>
+
+    <section id="views-issued">
+        <h2>Issue &amp; Return Views</h2>
+        <h3>Issued Books List</h3>
+        <pre>
+def issued_books_list(request):
+    issued_books = IssuedBook.objects.select_related('student', 'book').all()
+    active_issues = issued_books.filter(is_returned=False)
+    returned_books = issued_books.filter(is_returned=True)
+
+    status_filter = request.GET.get('status', 'all')
+    if status_filter == 'active':
+        issued_books = active_issues
+    elif status_filter == 'returned':
+        issued_books = returned_books
+
+    search_query = request.GET.get('search', '')
+    if search_query:
+        issued_books = issued_books.filter(
+            Q(student__name__icontains=search_query) |
+            Q(student__id_number__icontains=search_query) |
+            Q(book__title__icontains=search_query)
+        )
+
+    issued_books = issued_books.order_by('-issue_date')
+
+    context = {
+        'issued_books': issued_books,
+        'total_issued': IssuedBook.objects.filter(is_returned=False).count(),
+        'total_returned': IssuedBook.objects.filter(is_returned=True).count(),
+        'status_filter': status_filter,
+        'search_query': search_query,
+    }
+    return render(request, 'myapp/issued_books_list.html', context)</pre>
+
+        <h3>Issue Book</h3>
+        <pre>
+def issue_book(request):
+    if request.method == 'POST':
+        form = IssuedBookForm(request.POST)
+        if form.is_valid():
+            issued_book = form.save()
+            book = issued_book.book
+            book.quantity -= issued_book.quantity
+            book.save()
+
+            messages.success(
+                request,
+                f"Book '{book.title}' issued to '{issued_book.student.name}' ({issued_book.quantity} copies)"
+            )
+            return redirect('myapp:issued_books_list')
+    else:
+        form = IssuedBookForm()
+
+    context = {
+        'form': form,
+        'title': 'Issue Book',
+        'button_text': 'Issue Book'
+    }
+    return render(request, 'myapp/issue_book_form.html', context)</pre>
+        <div class="callout">
+            Explain why we update `book.quantity` immediately after issuing to keep inventory accurate.
+        </div>
+
+        <h3>Return Book</h3>
+        <pre>
+def return_book(request, pk):
+    issued_book = get_object_or_404(IssuedBook, pk=pk)
+
+    if issued_book.is_returned:
+        messages.warning(request, "This book has already been returned!")
+        return redirect('myapp:issued_books_list')
+
+    if request.method == 'POST':
+        form = ReturnBookForm(request.POST, instance=issued_book)
+        if form.is_valid():
+            quantity_returned = form.cleaned_data['quantity']
+
+            if quantity_returned > issued_book.quantity:
+                messages.error(request, f"Cannot return more than {issued_book.quantity} copies!")
+                return render(request, 'myapp/return_book_form.html', {'form': form, 'issued_book': issued_book})
+
+            issued_book.quantity -= quantity_returned
+            issued_book.return_date = None
+
+            if issued_book.quantity == 0:
+                issued_book.is_returned = True
+                issued_book.return_date = timezone.now().date()
+
+            issued_book.save()
+
+            book = issued_book.book
+            book.quantity += quantity_returned
+            book.save()
+
+            messages.success(
+                request,
+                f"'{quantity_returned}' copy/copies of '{book.title}' returned successfully!"
+            )
+            return redirect('myapp:issued_books_list')
+    else:
+        form = ReturnBookForm(instance=issued_book)
+
+    context = {'form': form, 'issued_book': issued_book}
+    return render(request, 'myapp/return_book_form.html', context)</pre>
+        <p>Important teaching points: partial returns, preventing negative quantities, using `timezone.now()`.</p>
+    </section>
+
+    <section id="urls">
+        <h2>URL Configuration (`myapp/urls.py`)</h2>
+        <pre>
+# Student URLs
+path('students/', views.student_list, name='student_list'),
+path('students/create/', views.create_student, name='create_student'),
+path('students/&lt;int:pk&gt;/', views.student_detail, name='student_detail'),
+path('students/&lt;int:pk&gt;/edit/', views.edit_student, name='edit_student'),
+path('students/&lt;int:pk&gt;/delete/', views.delete_student, name='delete_student'),
+
+# Issue/Return URLs
+path('issued-books/', views.issued_books_list, name='issued_books_list'),
+path('issued-books/issue/', views.issue_book, name='issue_book'),
+path('issued-books/&lt;int:pk&gt;/return/', views.return_book, name='return_book'),</pre>
+        <p>Discuss how naming conventions align with Phase 2 patterns and make template linking intuitive.</p>
+    </section>
+
+    <section id="templates">
+        <h2>Template Highlights</h2>
+        <ul>
+            <li><code>student_list.html</code> – Table with search bar, total count badge, links to detail/edit/delete.</li>
+            <li><code>student_detail.html</code> – Shows profile plus list of active issues using `student.issued_books`.</li>
+            <li><code>student_form.html</code> – Reused for create/edit, similar structure to `book_form.html`.</li>
+            <li><code>student_confirm_delete.html</code> – Confirmation modal style page.</li>
+            <li><code>issued_books_list.html</code> – Filter buttons for Active/Returned, search field, stats cards.</li>
+            <li><code>issue_book_form.html</code> &amp; <code>return_book_form.html</code> – Mirror the book/student form styling.</li>
+        </ul>
+        <p>Encourage students to keep consistent design language and consider extracting shared layouts into base templates.</p>
+    </section>
+
+    <section id="testing">
+        <h2>Testing Checklist</h2>
+        <ol>
+            <li>Create several students; verify uniqueness constraint on `id_number` works.</li>
+            <li>Issue a book to a student; ensure book quantity decreases accordingly.</li>
+            <li>Attempt to issue more copies than available; confirm validation error appears.</li>
+            <li>Return a subset of copies to verify partial return logic updates quantities correctly.</li>
+            <li>Return the remaining copies and confirm `is_returned` flips to `True` and `return_date` is set.</li>
+            <li>Use the search filters on student and issued-book lists to confirm query logic.</li>
+        </ol>
+    </section>
+
+    <section id="commands">
+        <h2>Terminal Commands Recap</h2>
+        <pre>
+# Make new migrations for Student/IssuedBook
+python manage.py makemigrations myapp
+python manage.py migrate
+
+# Run dev server
+python manage.py runserver
+
+# Optional: Django shell for verifying relationships
+python manage.py shell
+>>> from myapp.models import Student
+>>> Student.objects.first().issued_books.all()
+        </pre>
+    </section>
+
+    <section id="teaching-tips">
+        <h2>Instructor Tips</h2>
+        <ul>
+            <li>Discuss real-world constraints (max books per student, due dates) to set up later enhancements.</li>
+            <li>Have students visualize database relationships with ER diagrams.</li>
+            <li>Encourage unit tests for issue/return logic to catch regressions.</li>
+            <li>Preview Phase 4 where authentication ties users to student records.</li>
+        </ul>
+    </section>
+
+    <section id="key-takeaways" style="background: #fff; border-radius: 12px; margin-bottom: 22px; padding: 26px 30px; box-shadow: 0 7px 24px rgba(13, 44, 84, 0.08);">
+        <h2 style="color: #0d2c54; margin-top: 0;">Phase 3 Key Takeaways</h2>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ ForeignKeys:</strong> Connect models with many-to-one relationships. Store IDs in database.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ related_name:</strong> Access relationships in reverse. Clean, intuitive queries like student.issued_books.all()</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ on_delete=CASCADE:</strong> Deleting parent cascades to children. Prevents orphaned records.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ Circular Logic:</strong> Issue decreases book.quantity, return increases it. Both models update together.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ Cross-Model Validation:</strong> Check constraints between related models in form.clean(). Prevent business rule violations.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ select_related():</strong> Fetch related data with one SQL JOIN instead of N+1 queries.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ Choice Fields:</strong> Constrain values in model. Database + form + display all benefit.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ Partial Returns:</strong> Update state incrementally. Issue → Partial Return → Full Return workflows.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ Relationship Traversal:</strong> Query across tables with student__department. Django handles SQL JOINs.</p>
+        </div>
+        <div style="border-left: 5px solid #3d5af1; background: #e7ecff; padding: 16px 20px; border-radius: 8px; margin: 18px 0;">
+            <p><strong>✓ Unique Constraints:</strong> Database enforces uniqueness. Combined with form validation for robust data integrity.</p>
+        </div>
+    </section>
+</main>
+<footer>
+    <h3>Phase 3 Complete! 🎉</h3>
+    <p>You've mastered database relationships, circular logic between models, and complex validation across related objects.</p>
+    <p>Your library system can now track students, manage book circulation, and handle partial returns with professional workflows.</p>
+    <p><strong>Next:</strong> Phase 4 – Authentication, user roles, and approval workflows!</p>
+</footer>
+</body>
+</html>
+
